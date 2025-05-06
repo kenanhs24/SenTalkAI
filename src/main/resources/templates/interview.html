@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>FinalRoundAI - Java Voice</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; }
+        #questionContainer { margin-bottom: 20px; }
+        #answerField, #customQuestionInput { font-family: monospace; padding: 10px; }
+        #transcriptLog { background: #f9f9f9; padding: 10px; border-left: 4px solid #ccc; margin-top: 10px; white-space: pre-line; }
+    </style>
+</head>
+<body>
+<h2>🤖 SenTalk Practice </h2>
+
+<!-- 🚀 ROLE INPUT -->
+<form onsubmit="return false;">
+
+    <label>Enter Job Role:</label>
+    <input type="text" name="role" id="jobRoleInput" th:value="${role}" value="SDET" required>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const savedRole = localStorage.getItem("savedRole");
+            if (savedRole) {
+                document.getElementById("jobRoleInput").value = savedRole;
+            }
+
+            document.getElementById("jobRoleInput").addEventListener("input", () => {
+                localStorage.setItem("savedRole", document.getElementById("jobRoleInput").value);
+            });
+        });
+    </script>
+
+
+    <!-- Existing Buttons -->
+    <button type="button" onclick="generateQuestion()">Generate Question</button>
+    <!--<button type="button" onclick="startMockInterview()">🎙️ Interview Me</button>-->
+    <button type="button" onclick="startSingleScreenInterview()">🧠 Smart Mock Interview</button>
+    <button type="button" onclick="startExternalVoiceInterview()">🎤 Interview from Voice</button>
+    <button type="button" onclick="window.location.reload()">🔄 Refresh</button>
+
+
+    <!-- ✅ New View History Button (GET form inside this form block) -->
+</form>
+
+<!-- Below your main form or after all buttons -->
+<form method="get" action="/history" style="margin-top: 10px;">
+    <button type="submit">📜 View History</button>
+</form>
+
+<hr>
+<!-- ✅ UNIFIED QUESTION + ANSWER + FEEDBACK FRAME -->
+<div id="questionContainer" style="border: 1px solid #ccc; padding: 20px; background: #fefefe; border-radius: 8px; margin-top: 20px;">
+
+    <h3>🧠 Interview Question</h3>
+    <p id="questionText" style="font-weight: bold;"></p>
+
+    <h4 style="margin-top: 20px;">💬 AI Suggested Answer</h4>
+    <textarea id="answerField" name="answer" rows="6" cols="80" style="white-space: pre-line; width: 100%; font-family: monospace;"></textarea>
+
+
+    <div style="margin-top: 10px;">
+        <button onclick="speakQuestion()">🔊 Listen</button>
+        <button onclick="generateAnswer()">🤖 Auto Answer</button>
+        <button onclick="getNextQuestion()">⏭️ Next</button>
+        <button onclick="document.getElementById('questionContainer').style.display='none'">❌ Close</button>
+    </div>
+
+
+    <!-- Optional Transcript/Feedback can go here -->
+    <div id="transcriptLog" style="margin-top: 15px;"></div>
+
+</div>
+
+
+
+<!-- 💬 FEEDBACK -->
+<div th:if="${feedback}">
+    <h3>Feedback:</h3>
+    <p th:text="${feedback}" style="white-space: pre-line;"></p>
+</div>
+
+<hr/>
+
+<!-- 🤠 ASK CUSTOM QUESTION -->
+<h3>Ask AI Your Own Question:</h3>
+<form id="customQuestionForm" method="post" action="/ask">
+    <textarea id="customQuestionInput" name="userQuestion" rows="3" cols="80" placeholder="Ask anything..."></textarea><br/>
+    <button type="button" onclick="startListening('customQuestionInput', true)">🎤 Speak</button>
+    <button type="submit">Ask</button>
+</form>
+
+<div th:if="${customQuestion}">
+    <h4>Your Question:</h4>
+    <p th:text="${customQuestion}"></p>
+    <h4>AI Answer:</h4>
+    <p th:text="${aiAnswer}" style="white-space: pre-line;"></p>
+</div>
+
+<script>
+    function startListening(elementId, autoSubmit = false) {
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = 'en-US';
+        recognition.start();
+
+        recognition.onresult = function (event) {
+            const transcript = event.results[0][0].transcript;
+            document.getElementById(elementId).value = transcript;
+            document.getElementById("transcriptLog").innerHTML = "Transcript: " + transcript;
+
+            if (autoSubmit && elementId === 'customQuestionInput') {
+                const role = document.getElementById("jobRoleInput")?.value || "SDET";
+                const finalPrompt = `You're a Senior ${role} and QA expert. Give a short, clear answer in 2–3 bullet points with a short summary:\n\nQuestion: ${transcript}`;
+
+                fetch('/generate-answer', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({prompt: finalPrompt})
+                })
+                    .then(response => response.text())
+                    .then(answer => {
+                        document.getElementById("customQuestionInput").value = transcript;
+                        document.getElementById("transcriptLog").innerHTML += "\n\nAI Answer:\n" + answer;
+                        saveTranscript(transcript, answer);
+                    });
+            }
+        };
+
+        recognition.onerror = function (event) {
+            alert("Speech recognition error: " + event.error);
+        };
+    }
+
+    function speakQuestion() {
+        const question = document.getElementById("questionText").innerText;
+        const utterance = new SpeechSynthesisUtterance(question);
+        speechSynthesis.speak(utterance);
+    }
+    function speak(text) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        speechSynthesis.speak(utterance);
+    }
+
+
+    function generateAnswer() {
+        const question = document.getElementById("questionText").innerText;
+        const role = document.getElementById("jobRoleInput")?.value || "SDET";
+
+        const prompt = `You're a skilled ${role}. Provide a short, clear answer using 2–3 bullet points and a short summary for the following QA/SDET interview question:\n\n${question}`;
+
+        document.getElementById("answerField").value = "Loading AI-generated answer...";
+
+        fetch('/generate-answer', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({prompt: prompt})
+        })
+            .then(response => response.text())
+            .then(answer => {
+                document.getElementById("answerField").value = answer;
+                document.getElementById("transcriptLog").innerText = "AI Answer:\n" + answer;
+                saveTranscript(question, answer);
+            })
+            .catch(error => {
+                document.getElementById("answerField").value = "Error generating answer.";
+            });
+    }
+
+    function saveTranscript(question, answer) {
+        fetch('/save-transcript', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({question: question, answer: answer})
+        });
+    }
+
+    function startMockInterview() {
+        const role = document.getElementById("jobRoleInput")?.value || "SDET";
+        const prompt = `You're an interviewer for a ${role} role. Ask one technical interview question and also prepare an ideal answer using 2–3 bullet points and a short summary. Format:\n\nQuestion: ...\nAnswer: ...`;
+
+        fetch('/generate-answer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: prompt })
+        })
+            .then(response => response.text())
+            .then(fullText => {
+                let question = "";
+                let answer = "";
+
+                const questionMatch = fullText.match(/Question[:\n](.*?)(?:Answer[:\n]|$)/s);
+                const answerMatch = fullText.match(/Answer[:\n](.*)/s);
+
+                if (questionMatch) question = questionMatch[1].trim();
+                if (answerMatch) answer = answerMatch[1].trim();
+
+                if (!question) question = fullText.trim();
+                if (!answer) answer = "AI could not provide an answer.";
+
+                // Display
+                const questionContainer = document.getElementById("questionContainer");
+                if (questionContainer) {
+                    questionContainer.style.display = 'block';
+                }
+                document.getElementById("questionText").innerText = question;
+                document.getElementById("answerField").value = answer;
+                document.getElementById("transcriptLog").innerText = "AI Answer:\n" + answer;
+
+                // 🔊 Only speak both in this function
+                speak(question);
+                speak(answer);
+
+                saveTranscript(question, answer);
+            })
+            .catch(error => {
+                alert("Interview Me error: " + error.message);
+            });
+    }
+
+    function startSingleScreenInterview() {
+        const role = document.getElementById("jobRoleInput")?.value || "QA Engineer";
+        const prompt = `You are an AI interviewer for a ${role} position. Ask one clear, relevant interview question and immediately provide a short answer using 2–3 bullet points and a brief summary. Format it like this:\n\nQuestion: ...\nAnswer: ...`;
+
+        fetch('/generate-answer', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({prompt: prompt})
+        })
+            .then(response => response.text())
+            .then(fullText => {
+                console.log("🧠 Smart Interview Response:", fullText); // ✅ For debugging
+
+                let question = "";
+                let answer = "";
+
+                const questionMatch = fullText.match(/Question[:\n](.*?)(?:Answer[:\n]|$)/s);
+                const answerMatch = fullText.match(/Answer[:\n](.*)/s);
+
+                if (questionMatch) {
+                    question = questionMatch[1].trim();
+                }
+
+                if (answerMatch) {
+                    answer = answerMatch[1].trim();
+                }
+
+                if (!question) {
+                    question = fullText.trim(); // fallback to full text
+                }
+
+                if (!answer) {
+                    answer = "AI could not provide an answer in expected format.";
+                }
+
+                // Display question and answer
+                document.getElementById("questionContainer").style.display = 'block';
+                document.getElementById("questionText").innerText = question;
+                document.getElementById("answerField").value = answer;
+                document.getElementById("transcriptLog").innerText = "AI Answer:\n" + answer;
+
+                saveTranscript(question, answer);
+            })
+            .catch(error => {
+                alert("❌ Smart Interview Error: " + error.message);
+            });
+
+
+    }
+
+
+
+
+function startExternalInterviewerFlow() {
+        const role = document.getElementById("jobRoleInput")?.value || "SDET";
+
+        const questionPrompt = `Act as an interviewer and ask one clear technical interview question for a ${role} position.`;
+
+        fetch('/generate-answer', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({prompt: questionPrompt})
+        })
+            .then(response => response.text())
+            .then(question => {
+                document.getElementById("questionContainer").style.display = 'block';
+                document.getElementById("questionText").innerText = question;
+
+                const answerPrompt = `You're a skilled ${role}. Provide a short, clear answer using 2–3 bullet points and a summary for this interview question:\n\n${question}`;
+
+                return fetch('/generate-answer', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({prompt: answerPrompt})
+                });
+            })
+            .then(response => response.text())
+            .then(answer => {
+                document.getElementById("answerField").value = answer;
+                document.getElementById("transcriptLog").innerText = "AI Answer:\n" + answer;
+                saveTranscript(document.getElementById("questionText").innerText, answer);
+            });
+    }
+
+    function startExternalVoiceInterview() {
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = 'en-US';
+        recognition.start();
+
+        recognition.onresult = function (event) {
+            const question = event.results[0][0].transcript;
+            document.getElementById("questionContainer").style.display = 'block';
+            document.getElementById("questionText").innerText = question;
+
+            const role = document.getElementById("jobRoleInput")?.value || "SDET";
+            const prompt = `You are a Senior ${role}. Provide a short, clear answer in 2–3 bullet points with a brief summary for the following interview question:\n\n${question}`;
+
+            fetch('/generate-answer', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({prompt: prompt})
+            })
+                .then(response => response.text())
+                .then(answer => {
+                    document.getElementById("answerField").value = answer;
+                    document.getElementById("transcriptLog").innerText = "AI Answer:\n" + answer;
+                    saveTranscript(question, answer);
+                });
+        };
+
+        recognition.onerror = function (event) {
+            alert("Speech recognition error: " + event.error);
+        };
+    }
+
+    function getNextQuestion() {
+        const role = document.getElementById("jobRoleInput")?.value || "SDET";
+        const prompt = `You're an AI interviewer for a ${role} role. Ask one new technical interview question.`;
+
+        fetch('/generate-answer', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({prompt: prompt})
+        })
+            .then(response => response.text())
+            .then(question => {
+                document.getElementById("questionContainer").style.display = 'block';
+                document.getElementById("questionText").innerText = question;
+                document.getElementById("answerField").value = "";
+                document.getElementById("transcriptLog").innerText = "";
+                // 🔇 No auto speaking here
+            })
+            .catch(error => {
+                alert("Error getting next question: " + error.message);
+            });
+    }
+    function generateQuestion() {
+        const role = document.getElementById("jobRoleInput")?.value || "SDET";
+        const prompt = `You're an interviewer for a ${role} position. Ask one relevant technical interview question.`;
+
+        fetch('/generate-answer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: prompt })
+        })
+            .then(response => response.text())
+            .then(question => {
+                document.getElementById("questionContainer").style.display = 'block';
+                document.getElementById("questionText").innerText = question;
+                document.getElementById("answerField").value = "";
+                document.getElementById("transcriptLog").innerText = "";
+            })
+            .catch(error => {
+                alert("Error generating question: " + error.message);
+            });
+    }
+
+        // ⬇️ ADD THIS TO END OF YOUR EXISTING SCRIPT BLOCK
+        function startRealTimeVoiceInterview() {
+        const role = document.getElementById("jobRoleInput")?.value || "SDET";
+
+            const prompt = `You're acting as a real human interviewer for a ${role} role.
+Ask one realistic technical interview question.
+Then answer it like a confident Senior ${role} would—keep it natural, short (2–3 lines), and avoid sounding robotic or like an AI.
+Don't use "AI Answer" or give long explanations.
+Format:
+Question: ...
+Answer: ...`;
+
+
+            fetch('/generate-answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+    })
+        .then(response => response.text())
+        .then(fullText => {
+        let question = "", answer = "";
+
+        const questionMatch = fullText.match(/Question[:\n](.*?)(?:Answer[:\n]|$)/s);
+        const answerMatch = fullText.match(/Answer[:\n](.*)/s);
+
+        if (questionMatch) question = questionMatch[1].trim();
+        if (answerMatch) answer = answerMatch[1].trim();
+
+        // Show both on screen
+        document.getElementById("questionText").innerText = question;
+        document.getElementById("answerField").value = answer;
+        document.getElementById("transcriptLog").innerText = "AI Answer:\n" + answer;
+        document.getElementById("questionContainer").style.display = 'block';
+
+        // Speak both
+        speak(question);
+        setTimeout(() => speak(answer), 3000); // wait ~3s
+
+        // Save
+        saveTranscript(question, answer);
+    })
+        .catch(error => alert("❌ Real-time interview error: " + error.message));
+    }
+
+
+
+</script>
+
+</body>
+</html>

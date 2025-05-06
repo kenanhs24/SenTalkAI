@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Interview History</title>
+    <a href="/">⬅ Back to Interview</a>
+    <style>
+        body { font-family: monospace; padding: 20px; background-color: #f0f0f0; }
+        .history-block { background: #fff; padding: 15px; margin-bottom: 20px; border-radius: 8px; box-shadow: 1px 1px 4px #ccc; }
+        pre { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+<h2>📜 Interview History</h2>
+<div th:each="entry : ${history}" class="history-block">
+    <pre th:text="${entry}"></pre>
+</div>
+<a href="/">⬅ Back to Interview</a>
+</body>
+</html>
